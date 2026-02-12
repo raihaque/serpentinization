@@ -1,5 +1,5 @@
 # serpentinization
-modeling olivine to serpentinization using lmgc90
+Modeling olivine to serpentine reaction using lmgc90
 
 -> create_hex_groups.py:
     Creates groups of hexagons
