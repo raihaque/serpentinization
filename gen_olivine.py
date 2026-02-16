@@ -70,6 +70,10 @@ hexagon_data =  data['hexagons']
 groups = data['groups']
 num_grs = data['parameters']['num_grs']
 
+if len(groups) > 100000:
+    print('Warning! Number of groups is more than 100000.')
+    sys.exit()
+
 dim = 2
 
 #radius     = 1e-1   # particle size ## read from json file
@@ -80,11 +84,17 @@ density_w  = 10000.  # wall density
 g = -9.8             # gravity
 alert = radius       # used for contact search in pre.see_table
 young_modulus = 10e7 #
-cn = 3e7             # Normal stiffness
-ct = 1.5e7           # Tangential stiffness
-smax = 1e7           # Maximum cohesive stress
-w = 6e-6             # Critical separation
-stfr = 0.7           # static friction
+
+cn = 2e8             # Normal stiffness (bonds between same group)
+ct = 1e8             # Tangential stiffness (bonds between same group)
+smax = 1e7           # Maximum cohesive stress (bonds between same group)
+w = 6e-6             # Critical separation (bonds between same group)
+
+cn2 = 2e7            # Normal stiffness (bonds between different groups)
+ct2 = 1e7            # Tangential stiffness (bonds between different groups)
+smax2 = 1e7          # Maximum cohesive stress (bonds between different groups)
+w2 = 6e-6            # Critical separation (bonds between different groups)
+stfr = 0.7           # static friction 
 dyfr = 0.6           # dynamic friction coefficient after glue break
 
 
@@ -117,13 +127,12 @@ bodies = pre.avatars()
 for hexagon in hexagon_data:
     pos = hexagon['center']
     mesh = getmesh(center=pos, nb_vertices=6, radius=radius, phi=phi)
-
+    color = '{}'.format(hexagon['gr_id']).rjust(5,'x')
     body = pre.buildMeshedAvatar(mesh=mesh, model=modD, material=matD)
-    body.addContactors(group='side', shape='ALpxx', color='BLUEx', reverse=True)
-    body.addContactors(group='side', shape='CLxxx', color='BLUEx', reverse=True, weights=[0.01,0.99])                
+    body.addContactors(group='side', shape='ALpxx', color=color, reverse=True)
+    body.addContactors(group='side', shape='CLxxx', color=color, reverse=True, weights=[0.01,0.99])                
                                  
     bodies.addAvatar(body)
-
 
 left   = pre.rigidJonc(axe1=ly, axe2=wall_width, center=[-wall_width, 0.5*ly], model=modR, material=mat_wall, color='WALLx')
 left.imposeDrivenDof(component=[1,2,3], dofty='vlocy')
@@ -171,25 +180,41 @@ svs   = pre.see_tables()
 tacts = pre.tact_behavs()
 
 # interaction definition:
+colors = ['{}'.format(i).rjust(5,'x') for i in range(len(groups))]
 
 #lgg = pre.tact_behav(name='iqsc0', law='GAP_SGR_CLB', fric=dyfr)
+
+# contact law between same group
 lgg = pre.tact_behav(name='mpczm', law='MP3_CZM', cn=cn, ct=ct, smax=smax, w=w, stfr=stfr, dyfr=dyfr)
 tacts+= lgg
 
-svgg = pre.see_table(CorpsCandidat='MAILx', candidat='CLxxx', colorCandidat='BLUEx',
-                     CorpsAntagoniste='MAILx', antagoniste='ALpxx', colorAntagoniste='BLUEx',
-                     behav=lgg, alert=alert,halo=0.1)
-svs+=svgg 
+for color in colors:
+    svgg = pre.see_table(CorpsCandidat='MAILx', candidat='CLxxx', colorCandidat=color,
+                         CorpsAntagoniste='MAILx', antagoniste='ALpxx', colorAntagoniste=color,
+                         behav=lgg, alert=alert,halo=0.1)
+    svs+=svgg 
+
+# contact law between different groups
+lgg2 = pre.tact_behav(name='mpczm', law='MP3_CZM', cn=cn2, ct=ct2, smax=smax2, w=w2, stfr=stfr, dyfr=dyfr)
+tacts+= lgg2
+
+for i in range(len(colors)):
+    for j in range(i+1,len(colors)):
+        svgg = pre.see_table(CorpsCandidat='MAILx', candidat='CLxxx', colorCandidat=colors[i],
+                             CorpsAntagoniste='MAILx', antagoniste='ALpxx', colorAntagoniste=colors[j],
+                             behav=lgg2, alert=alert,halo=0.1)
+        svs+=svgg
 
 
+# wall-hexagon contact
 lgp = pre.tact_behav(name='iqsc1', law='GAP_SGR_CLB', fric=dyfr)
 tacts+= lgp
 
-
-svgp = pre.see_table(CorpsCandidat='MAILx'   , candidat='CLxxx'   , colorCandidat='BLUEx',
-                    CorpsAntagoniste='RBDY2', antagoniste='JONCx', colorAntagoniste='WALLx',
-                    behav=lgp,  alert=alert)
-svs+=svgp
+for color in colors:
+    svgp = pre.see_table(CorpsCandidat='MAILx'   , candidat='CLxxx'   , colorCandidat=color,
+                        CorpsAntagoniste='RBDY2', antagoniste='JONCx', colorAntagoniste='WALLx',
+                        behav=lgp,  alert=alert)
+    svs+=svgp
 
 lptpt = pre.tact_behav(name='stiff', law='ELASTIC_ROD', stiffness=1e10, prestrain=0.)
 tacts+= lptpt
@@ -205,6 +230,8 @@ post = pre.postpro_commands()
 
 # writing files
 pre.writeDatbox(dim, mats, mods, bodies, tacts, svs, post=post, gravy=[0., g, 0.])
+
+print('Total groups:', len(colors))
 
 try:
  pre.visuAvatars(bodies)
