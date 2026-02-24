@@ -310,9 +310,9 @@ for e in G.edges:
             G.edges[e]["type"] = 2
             edges_of_type[2].append(e)
 
-#-----------------------------------------------#
+#-------------------------------------------------------------#
 # Make the outer edges (near the boundary) of type 3 to type 1 
-#-----------------------------------------------#
+#-------------------------------------------------------------#
 
 x_min = radius
 x_max = Lx - radius
@@ -328,7 +328,7 @@ for e in G.edges:
             edges_of_type[1].append(e)
             edges_of_type[3].remove(e)
 
-#-----------------------------------------------#^
+#-------------------------------------------------------------#
 
 # change the type of the edges, that are connected to type 2 or type 3 edges, to type 4
 for edge in edges_of_type[2] + edges_of_type[3]:
@@ -349,10 +349,8 @@ indices = np.random.choice(np.arange(len(edges_of_type[1])), 2)
 for ID in indices:
     u, v = edges_of_type[1][ID]
     nn_edges = list(G.edges(u)) + list(G.edges(v))
-    #nn_edges.remove((u,v))
     nn_edges.remove((v,u))
     nn_edges = [tuple(sorted(e)) for e in nn_edges if G.edges[sorted(e)]["type"] == 1]
-    #nn_edges = [e for e in nn_edges if G.edges[e]["type"] == 1]
     group_of_edges[ID] = nn_edges
     for e in nn_edges:
         G.edges[e]["edge_gr"] = ID  
@@ -413,7 +411,8 @@ Tmax = 5000.              # max temp
 nb_steps_T_incr = 100     # steps to increase T from T0 to Tmax
 nb_loops_max = 100        # max while loops 
 nb_select_mecaNodes = 4   # select FEM nodes at each simulation step
-nb_select_edges = 10      # select edges (networkx) at each simulation step
+#nb_select_edges = 10      # select edges (networkx) at each simulation step
+reaction_rate = 0.2       # 20% of active edges
 Fy = -1e6                 # Force on the top wall
 
 freq_write   = 1500       # write parameter
@@ -493,14 +492,9 @@ for k in range(3*nb_steps_T_incr): # 3*nb_steps_T_incr
 scale2 =  1.0
 scale3 =  1.0
 scale4 =  1.0
-shape2 = 4.0
+shape2 = 5.0
 shape3 = 10.0
 shape4 = 2.0
-
-weights2 = np.random.gamma(shape2, scale2, len(edges_of_type[2]))
-weights3 = np.random.gamma(shape3, scale3, len(edges_of_type[3]))
-edges23 = edges_of_type[2] + edges_of_type[3]
-weights23 = np.concatenate([weights2, weights3])
 
 T_incrmnt = (Tmax - T0)/nb_steps_T_incr
 wall_pos = []
@@ -510,20 +504,35 @@ w_nodes_allPolyg = [calculate_probability_weights_nodes(idBody) for idBody in ra
 Nsteps = 10
 for loop_id in range(Nsteps):
     edges234 = edges_of_type[2] + edges_of_type[3] + edges_of_type[4]
-    if len(edges234)==0:
+    nb_select_edges = int(reaction_rate * len(edges234))
+    
+    #if len(edges234)==0:
+    #    break
+    #if len(edges234) <= nb_select_edges:
+    #    chosen_edges = edges234
+    #else:
+    #    weights2 = np.random.gamma(shape2, scale2, len(edges_of_type[2]))
+    #    weights3 = np.random.gamma(shape3, scale3, len(edges_of_type[3]))
+    #    weights4 = np.random.gamma(shape4, scale4, len(edges_of_type[4]))
+    #    weights234 = np.concatenate([weights2, weights3, weights4])
+    #    
+    #    # Choose edges randomly
+    #    prob = weights234 / np.sum(weights234)
+    #    chosen_idx = np.random.choice(len(edges234), nb_select_edges, p=prob) # select nb_select_edges edges
+    #    chosen_edges = [edges234[idx] for idx in chosen_idx]
+    
+    if nb_select_edges < 1: 
         break
-    if len(edges234) <= nb_select_edges:
-        chosen_edges = edges234
-    else:
-        weights2 = np.random.gamma(shape2, scale2, len(edges_of_type[2]))
-        weights3 = np.random.gamma(shape3, scale3, len(edges_of_type[3]))
-        weights4 = np.random.gamma(shape4, scale4, len(edges_of_type[4]))
-        weights234 = np.concatenate([weights2, weights3, weights4])
         
-        # Choose edges randomly
-        prob = weights234 / np.sum(weights234)
-        chosen_idx = np.random.choice(len(edges234), nb_select_edges, p=prob) # select nb_select_edges edges
-        chosen_edges = [edges234[idx] for idx in chosen_idx]
+    weights2 = np.ones(len(edges_of_type[2])) * shape2
+    weights3 = np.ones(len(edges_of_type[3])) * shape3
+    weights4 = np.ones(len(edges_of_type[4])) * shape4
+    weights234 = np.concatenate([weights2, weights3, weights4])
+    #    
+    # Choose edges randomly
+    prob = weights234 / np.sum(weights234)
+    chosen_idx = np.random.choice(len(edges234), nb_select_edges, p=prob) # select nb_select_edges edges
+    chosen_edges = [edges234[idx] for idx in chosen_idx]
     
     # select mecaNodes to increase T
     IdBodies, mecaNodes = select_mecaNodes(chosen_edges, nb_select_mecaNodes)
