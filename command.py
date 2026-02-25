@@ -499,9 +499,10 @@ Nb = chipy.mecaMAILx_GetNbMecaMAILx()   # Number of polygons
 w_nodes_allPolyg = [calculate_probability_weights_nodes(idBody) for idBody in range(1,Nb+1)] # probability weights for nodes
 
 # number of FEM nodes that correspod to an edge
-nb_nodes_per_edge = len(G.edges[edges_of_type[3][0]]["nn_hex"][ID_nn[0]])
+ID_nn_ = list(G.edges[edges_of_type[3][0]]["nn_hex"].keys())
+nb_nodes_per_edge = len(G.edges[edges_of_type[3][0]]["nn_hex"][ID_nn_[0]])
 # The number of times an edge is needed to be selected to ensure that all the FEM nodes has reacted
-nselect_edge_max = np.ceil(nb_nodes_per_edge/nb_select_mecaNodes)
+nselect_edge_max = np.ceil(nb_nodes_per_edge/nb_select_mecaNodes) 
 
 for loop_id in range(nb_loops_max):
     print('loop id:', loop_id)
