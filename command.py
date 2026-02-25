@@ -205,6 +205,7 @@ def select_mecaNodes(chosen_edges, NselectMecaNodes):
     IdBodies = []
     mecaNodes = []
     for e in chosen_edges:
+        G.edges[e]["nselected"] += 1
         for ID in G.edges[e]["nn_hex"].keys():
             nodes = G.edges[e]["nn_hex"][ID] # FEM nodes
             T = display_T[ID-1][nodes]
@@ -214,12 +215,7 @@ def select_mecaNodes(chosen_edges, NselectMecaNodes):
             #
             IdBodies.append(ID)
             #
-            nodes = nodes[T<Tmax]  ##fixed
-            
-            if len(nodes) == 0:
-                print('len(nodes) == 0', nodes)
-                breakpoint()
-                sys.exit()
+            nodes = nodes[T<Tmax]  
             
             if len(nodes) <= NselectMecaNodes:
                 mecaNodes.append(nodes)
@@ -409,7 +405,7 @@ solver_type='Stored_Delassus_Loops'
 T0 = 0.                   # initial temp
 Tmax = 5000.              # max temp
 nb_steps_T_incr = 100     # steps to increase T from T0 to Tmax
-nb_loops_max = 100        # max while loops 
+nb_loops_max = 200        # max while loops 
 nb_select_mecaNodes = 4   # select FEM nodes at each simulation step
 #nb_select_edges = 10      # select edges (networkx) at each simulation step
 reaction_rate = 0.2       # 20% of active edges
@@ -430,7 +426,7 @@ t0 = time()
 chipy.Initialize()       # Initializing
 chipy.checkDirectories() # checking/creating mandatory subfolders
 
-# chipy.utilities_DisableLogMes() # logMes
+chipy.utilities_DisableLogMes() # logMes
 
 chipy.SetDimension(dim,mhyp) # Set space dimension
 #
@@ -482,6 +478,7 @@ for e in G.edges:
 
 # Initialize loading
 for k in range(3*nb_steps_T_incr): # 3*nb_steps_T_incr
+    if k%10 == 0: print('Loading step:', k)
     chipy.utilities_logMes('INCREMENT STEP')
     chipy.IncrementStep()
     #
@@ -501,10 +498,23 @@ wall_pos = []
 Nb = chipy.mecaMAILx_GetNbMecaMAILx()   # Number of polygons
 w_nodes_allPolyg = [calculate_probability_weights_nodes(idBody) for idBody in range(1,Nb+1)] # probability weights for nodes
 
-Nsteps = 10
-for loop_id in range(Nsteps):
+# number of FEM nodes that correspod to an edge
+nb_nodes_per_edge = len(G.edges[edges_of_type[3][0]]["nn_hex"][ID_nn[0]])
+# The number of times an edge is needed to be selected to ensure that all the FEM nodes has reacted
+nselect_edge_max = np.ceil(nb_nodes_per_edge/nb_select_mecaNodes)
+
+for loop_id in range(nb_loops_max):
+    print('loop id:', loop_id)
+    
     edges234 = edges_of_type[2] + edges_of_type[3] + edges_of_type[4]
-    nb_select_edges = int(reaction_rate * len(edges234))
+    
+    # find accessible edge length (surface area in 3D)
+    nselected_234 = [G.edges[e]["nselected"] for e in edges234]
+    nselected_234 = np.array(nselected_234)
+    edge_length = (nselect_edge_max - nselected_234)/nselect_edge_max
+    edge_length = edge_length.sum()
+    
+    nb_select_edges = int(reaction_rate * edge_length)
     
     #if len(edges234)==0:
     #    break
