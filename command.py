@@ -33,8 +33,8 @@ def get_mecaMailx_nodes_of_edge(pos_u, pos_v, idBody):
     """
     nb_nodes = chipy.mecaMAILx_GetNbNodes(idBody)
     if nb_nodes < 1:
-        print('nb_nodes < 1')
-        breakpoint()
+        print('Warning! nb_nodes < 1. Quiting the rest..')
+        #breakpoint()
         sys.exit()
     pos_nodes = np.zeros((nb_nodes, 2))   # 2D
     for idNode in range(1, nb_nodes + 1):
@@ -151,9 +151,6 @@ def run_DEM_steps():
     chipy.WriteDisplayFiles(freq=freq_display,T=('mecafe','node',display_T))
     chipy.WritePostproFiles()
 
-def update_T():
-    pass
-
 def update_edge_type(chosen_edges):
     #        
     # change type if all mecaNodes have reacted
@@ -226,6 +223,63 @@ def select_mecaNodes(chosen_edges, NselectMecaNodes):
                 #
     return IdBodies, mecaNodes
 
+def triangle_area(x1, x2, x3):
+    # ----------------------------#
+    # Triangle area from 3 points #
+    # ----------------------------#
+    return 0.5 * abs(
+        (x2[0] - x1[0]) * (x3[1] - x1[1]) -
+        (x3[0] - x1[0]) * (x2[1] - x1[1])
+    )
+
+def mecaMailx_GetArea(idBody):
+    # ----------------------------------#
+    # Get tot area of idBody-th polygon #
+    # ----------------------------------#
+    
+    # ---- Number of nodes ----
+    nb_nodes = chipy.mecaMAILx_GetNbNodes(idBody)
+
+    # ---- Store current nodal coordinates ----
+    x = np.zeros((nb_nodes, 2))   # 2D
+
+    for idNode in range(1, nb_nodes + 1):
+        x[idNode - 1, :] = chipy.mecaMAILx_GetNodeCoorTT(idBody, idNode)
+
+    # ---- Elements ----
+    #nb_elem = chipy.mecaMAILx_GetNbElements(idBody)
+    conn = chipy.mecaMAILx_GetConnectivity(idBody)
+    nb_elem = conn[0]
+    total_area = 0.0
+    idx = 1  # index in connectivity vector
+
+    for ie in range(nb_elem):
+
+        # TRI3: 3 nodes per element
+        nb_per_element = conn[idx]
+        if nb_per_element!= 3:
+            raise RuntimeError('Nodes per element is not 3')
+        n1 = conn[idx + 1] - 1
+        n2 = conn[idx + 2] - 1
+        n3 = conn[idx + 3] - 1
+        idx += 4
+
+        total_area += triangle_area(
+            x[n1], x[n2], x[n3]
+        )
+    
+    return total_area
+
+def get_porosity():
+    # get dynamic porosity
+    ly = chipy.JONCx_GetCoor(4)[1] - wall_width
+    box_area = Lx*ly
+    hex_area = 0.0
+    
+    for idBody in range(1,chipy.mecaMAILx_GetNbMecaMAILx()+1):
+        hex_area = hex_area + mecaMailx_GetArea(idBody)
+    
+    return (box_area - hex_area)/box_area
 
 ##===================================================##
 
@@ -362,7 +416,7 @@ edge_type = ['-' if G.edges[e]["edge_gr"]==None else '--' for e in G.edges]
 
 # 4. Visualization using the actual coordinates as positions
 plt.figure(figsize=(7.5, 6.2))
-nx.draw(G, nodes_pos_nx, with_labels=False, node_size=50, edge_color=edge_colors, style=edge_type, width=3)
+nx.draw(G, nodes_pos_nx, with_labels=False, node_size=2, edge_color=edge_colors, style=edge_type, width=2)
 
 ax = plt.gca()
 gr_color = ["#{:06x}".format(random.randint(0, 0xFFFFFF)) for i in range(num_grs)]
@@ -494,13 +548,20 @@ shape3 = 10.0
 shape4 = 2.0
 
 T_incrmnt = (Tmax - T0)/nb_steps_T_incr
-wall_pos = []
+total_FEM_nodes = sum(len(T) for T in display_T)
+tot_edge_length = len(edges_of_type[1]) + len(edges_of_type[2]) + len(edges_of_type[3]) + len(edges_of_type[4])
+wall_width = chipy.JONCx_GetShape(4)[1]
+
+wall_pos = [[chipy.TimeEvolution_GetTime(), chipy.JONCx_GetCoor(4)[1]]] # time, top wall pos
+reaction_data = [[chipy.TimeEvolution_GetTime(), 0., 0., get_porosity()]] # time, nodes_reacted, length reacted, porosity
+
 Nb = chipy.mecaMAILx_GetNbMecaMAILx()   # Number of polygons
 w_nodes_allPolyg = [calculate_probability_weights_nodes(idBody) for idBody in range(1,Nb+1)] # probability weights for nodes
 
 # number of FEM nodes that correspod to an edge
 ID_nn_ = list(G.edges[edges_of_type[3][0]]["nn_hex"].keys())
 nb_nodes_per_edge = len(G.edges[edges_of_type[3][0]]["nn_hex"][ID_nn_[0]])
+
 # The number of times an edge is needed to be selected to ensure that all the FEM nodes has reacted
 nselect_edge_max = np.ceil(nb_nodes_per_edge/nb_select_mecaNodes) 
 
@@ -517,23 +578,13 @@ for loop_id in range(nb_loops_max):
     
     nb_select_edges = int(reaction_rate * edge_length)
     
-    #if len(edges234)==0:
-    #    break
-    #if len(edges234) <= nb_select_edges:
-    #    chosen_edges = edges234
-    #else:
-    #    weights2 = np.random.gamma(shape2, scale2, len(edges_of_type[2]))
-    #    weights3 = np.random.gamma(shape3, scale3, len(edges_of_type[3]))
-    #    weights4 = np.random.gamma(shape4, scale4, len(edges_of_type[4]))
-    #    weights234 = np.concatenate([weights2, weights3, weights4])
-    #    
-    #    # Choose edges randomly
-    #    prob = weights234 / np.sum(weights234)
-    #    chosen_idx = np.random.choice(len(edges234), nb_select_edges, p=prob) # select nb_select_edges edges
-    #    chosen_edges = [edges234[idx] for idx in chosen_idx]
-    
     if nb_select_edges < 1: 
         break
+    
+    #weights2 = np.random.gamma(shape2, scale2, len(edges_of_type[2]))
+    #weights3 = np.random.gamma(shape3, scale3, len(edges_of_type[3]))
+    #weights4 = np.random.gamma(shape4, scale4, len(edges_of_type[4]))
+    #weights234 = np.concatenate([weights2, weights3, weights4])
         
     weights2 = np.ones(len(edges_of_type[2])) * shape2
     weights3 = np.ones(len(edges_of_type[3])) * shape3
@@ -567,9 +618,29 @@ for loop_id in range(nb_loops_max):
     # update edge type (type 1 of the neighbors of selected type 4 becomes type 4), fully reacted edges become type 0 
     update_edge_type(chosen_edges)
     
+    # % of nodes reacted 
+    nb_nodes_reacted = np.count_nonzero(np.asarray(display_T) >= Tmax)
+    reacted_nodes_fr = nb_nodes_reacted/total_FEM_nodes # fraction
+    
+    # edge length reacted
+    length = len(edges_of_type[0])
+    edges234 = edges_of_type[2] + edges_of_type[3] + edges_of_type[4]
+    nselected_234 = [G.edges[e]["nselected"] for e in edges234]
+    nselected_234 = np.array(nselected_234)
+    edge_length = nselected_234/nselect_edge_max
+    length = length + edge_length.sum()
+    reacted_length_fr = length/tot_edge_length # fraction
+        
+    # porosity
+    porosity = get_porosity()
+    
+    # store reacted nodes percentage, reacted edge length, porosity 
+    reaction_data.append([chipy.TimeEvolution_GetTime(), reacted_nodes_fr, reacted_length_fr, get_porosity()]) # time, nodes_reacted, length reacted, porosity
+    
     # save top wall position with time
     if loop_id%10 == 0:
         np.savetxt('POSTPRO/top_wall_position.txt', np.array(wall_pos), header='time   postion')
+        np.savetxt('POSTPRO/reaction_data.txt', np.array(reaction_data), header='time, nodes_reacted, length_reacted, porosity')
 
 
 # close display & postpro
@@ -586,7 +657,7 @@ print('='*50)
 
 # save top wall position with time
 np.savetxt('POSTPRO/top_wall_position.txt', np.array(wall_pos), header='time   postion')
-
+np.savetxt('POSTPRO/reaction_data.txt', np.array(reaction_data), header='time, nodes_reacted, length_reacted, porosity')
 
 t = time() - t0
 h = int(t/3600)
